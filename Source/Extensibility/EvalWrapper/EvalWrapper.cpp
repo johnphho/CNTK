@@ -153,13 +153,8 @@ public:
             throw gcnew ObjectDisposedException("Object has been disposed.");
         }
 
-        std::map<std::wstring, std::vector<ElemType>*> stdOutputs;
-
-
         try
         {
-            std::vector<shared_ptr<std::vector<ElemType>>> sharedOutputVectors;
-
             List<ElemType>^ outputs = gcnew List<ElemType>(outputSize);
             for (int i = 0; i < outputSize; i++)
             {
@@ -169,40 +164,7 @@ public:
             Dictionary<String^, List<ElemType>^>^ outputMap = gcnew Dictionary<String^, List<ElemType>^>();
             outputMap->Add(outputKey, outputs);
 
-            for each (auto item in outputMap)
-            {
-                pin_ptr<const WCHAR> key = PtrToStringChars(item.Key);
-                shared_ptr<std::vector<ElemType>> ptr = CopyList(item.Value);
-                sharedOutputVectors.push_back(ptr);
-                stdOutputs.insert(MapEntry(key, ptr.get()));
-            }
-
-            try
-            {
-                m_eval->Evaluate(stdOutputs);
-            }
-            catch (const exception& ex)
-            {
-                throw GetCustomException(ex);
-            }
-
-            auto enumerator = outputMap->Keys->GetEnumerator();
-            for (auto& map_item : stdOutputs)
-            {
-                // Retrieve the layer key
-                enumerator.MoveNext();
-                String^ key = enumerator.Current;
-
-                std::vector<ElemType> &refVec = *(map_item.second);
-                int index = 0;
-
-                // Copy output to CLI structure
-                for (auto& vec : refVec)
-                {
-                    outputMap[key][index++] = vec;
-                }
-            }
-
+            Evaluate(outputMap);
             return outputMap[outputKey];
         }
         catch (Exception^)
@@ -222,11 +184,8 @@ public:
             throw gcnew ObjectDisposedException("Object has been disposed.");
         }
 
-        std::map<std::wstring, std::vector<ElemType>*> stdOutputs;
-
         try
         {
-            std::vector<shared_ptr<std::vector<ElemType>>> sharedOutputVectors;
             int outputSize = GetNodeDimensions(NodeGroup::Output)[outputKey];
 
             List<ElemType>^ outputs = gcnew List<ElemType>(outputSize);
@@ -238,40 +197,7 @@ public:
             Dictionary<String^, List<ElemType>^>^ outputMap = gcnew Dictionary<String^, List<ElemType>^>();
             outputMap->Add(outputKey, outputs);
 
-            for each (auto item in outputMap)
-            {
-                pin_ptr<const WCHAR> key = PtrToStringChars(item.Key);
-                shared_ptr<std::vector<ElemType>> ptr = CopyList(item.Value);
-                sharedOutputVectors.push_back(ptr);
-                stdOutputs.insert(MapEntry(key, ptr.get()));
-            }
-
-            try
-            {
-                m_eval->Evaluate(stdOutputs);
-            }
-            catch (const exception& ex)
-            {
-                throw GetCustomException(ex);
-            }
-
-            auto enumerator = outputMap->Keys->GetEnumerator();
-            for (auto& map_item : stdOutputs)
-            {
-                // Retrieve the layer key
-                enumerator.MoveNext();
-                String^ key = enumerator.Current;
-
-                std::vector<ElemType> &refVec = *(map_item.second);
-                int index = 0;
-
-                // Copy output to CLI structure
-                for (auto& vec : refVec)
-                {
-                    outputMap[key][index++] = vec;
-                }
-            }
-
+            Evaluate(outputMap);
             return outputMap[outputKey];
         }
         catch (Exception^)
@@ -323,22 +249,7 @@ public:
                 throw GetCustomException(ex);
             }
 
-            auto enumerator = outputs->Keys->GetEnumerator();
-            for (auto& map_item : stdOutputs)
-            {
-                // Retrieve the layer key
-                enumerator.MoveNext();
-                String^ key = enumerator.Current;
-
-                std::vector<ElemType> &refVec = *(map_item.second);
-                int index = 0;
-
-                // Copy output to CLI structure
-                for (auto& vec : refVec)
-                {
-                    outputs[key][index++] = vec;
-                }
-            }
+            WriteOutput(outputs, stdOutputs);
         }
         catch (Exception^)
         {
@@ -363,7 +274,6 @@ public:
         outputMap->Add(outputKey, outputs);
 
         Evaluate(inputs, outputMap);
-
         return outputMap[outputKey];
     }
 
@@ -386,7 +296,6 @@ public:
         outputMap->Add(outputKey, outputs);
 
         Evaluate(inputs, outputMap);
-
         return outputMap[outputKey];
     }
 
@@ -462,6 +371,51 @@ private:
             }
         }
         return lower;
+    }
+
+    void Evaluate(Dictionary<String^, List<ElemType>^>^ outputs)
+    {
+        std::vector<shared_ptr<std::vector<ElemType>>> sharedOutputVectors;
+        std::map<std::wstring, std::vector<ElemType>*> stdOutputs;
+
+        for each (auto item in outputs)
+        {
+            pin_ptr<const WCHAR> key = PtrToStringChars(item.Key);
+            shared_ptr<std::vector<ElemType>> ptr = CopyList(item.Value);
+            sharedOutputVectors.push_back(ptr);
+            stdOutputs.insert(MapEntry(key, ptr.get()));
+        }
+
+        try
+        {
+            m_eval->Evaluate(stdOutputs);
+        }
+        catch (const exception& ex)
+        {
+            throw GetCustomException(ex);
+        }
+
+        WriteOutput(outputs, stdOutputs);
+    }
+
+    void WriteOutput(Dictionary<String^, List<ElemType>^>^ outputs, std::map<std::wstring, std::vector<ElemType>*>& stdOutputs)
+    {
+        for each (auto item in outputs)
+        {
+            pin_ptr<const WCHAR> key = PtrToStringChars(item.Key);
+            std::vector<ElemType> *pVec = stdOutputs[key];
+            if (pVec == nullptr)
+            {
+                throw gcnew NullReferenceException("No output value available.");
+            }
+
+            int index = 0;
+            // Copy output to CLI structure
+            for (auto& vec : *pVec)
+            {
+                outputs[item.Key][index++] = vec;
+            }
+        }
     }
 
     /// <summary> Throws a CLR exception based on a native exception</summary>
